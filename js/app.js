@@ -1,6 +1,6 @@
 /**
  * app.js - Controller Utama KalenderKita
- * Menghubungkan state aplikasi, event listener, live preview, dan antarmuka manajemen libur.
+ * Menghubungkan state aplikasi, event listener, live preview, aksesibilitas, dan antarmuka manajemen libur.
  */
 
 import { MONTH_NAMES, getOrderedDayNames } from './calendar.js';
@@ -53,6 +53,8 @@ const state = {
 document.addEventListener('DOMContentLoaded', () => {
   initDOM();
   bindEvents();
+  initMobileViewSwitch();
+  initGlobalShortcuts();
   renderMonthTabs();
   updateLivePreview();
 });
@@ -119,7 +121,7 @@ function renderMonthTabs() {
   container.innerHTML = months.map((name, idx) => {
     const isActive = idx === state.month;
     return `
-      <button type="button" class="month-tab ${isActive ? 'active' : ''}" data-month="${idx}">
+      <button type="button" role="tab" aria-selected="${isActive ? 'true' : 'false'}" class="month-tab ${isActive ? 'active' : ''}" data-month="${idx}">
         ${name.substring(0, 3)}
       </button>
     `;
@@ -128,7 +130,7 @@ function renderMonthTabs() {
   // Update indikator bulan aktif pada sub-header
   const label = document.getElementById('activeMonthLabel');
   if (label) {
-    label.textContent = `${months[state.month]} ${state.year}`;
+    label.textContent = `${months[state.month].toUpperCase()} ${state.year}`;
   }
 }
 
@@ -146,7 +148,7 @@ function updateLivePreview() {
   const months = MONTH_NAMES[state.language] || MONTH_NAMES.id;
   const label = document.getElementById('activeMonthLabel');
   if (label) {
-    label.textContent = `${months[state.month]} ${state.year}`;
+    label.textContent = `${months[state.month].toUpperCase()} ${state.year}`;
   }
 
   // Update info ringkas hari libur di sidebar
@@ -179,7 +181,7 @@ function renderSidebarHolidaySnippet() {
 }
 
 /**
- * Event binding untuk seluruh interaksi pengguna
+ * Event binding untuk seluruh kontrol antarmuka
  */
 function bindEvents() {
   // 1. Tahun & Navigasi
@@ -351,16 +353,16 @@ function bindEvents() {
 
     try {
       btn.disabled = true;
-      btn.innerHTML = `<span class="spinner"></span> Memproses PNG 300 DPI...`;
+      btn.innerHTML = `<span class="spinner" aria-hidden="true"></span> Memproses PNG 300 DPI...`;
       await downloadCalendarPNG(state, filename);
       showToast(`Berhasil mengunduh ${filename}`);
     } catch (err) {
       console.error(err);
-      alert('Gagal mengunduh gambar PNG: ' + err.message);
+      showToast('Gagal mengunduh gambar PNG: ' + err.message, 'error');
     } finally {
       btn.disabled = false;
       btn.innerHTML = `
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
         Download PNG Transparan
       `;
     }
@@ -371,8 +373,13 @@ function bindEvents() {
     const monthName = (MONTH_NAMES[state.language] || MONTH_NAMES.id)[state.month].toLowerCase();
     const filename = `kalender-${state.year}-${monthNum}-${monthName}.svg`;
 
-    downloadCalendarSVG(state, filename);
-    showToast(`Berhasil mengunduh ${filename}`);
+    try {
+      downloadCalendarSVG(state, filename);
+      showToast(`Berhasil mengunduh ${filename}`);
+    } catch (err) {
+      console.error(err);
+      showToast('Gagal mengunduh file SVG: ' + err.message, 'error');
+    }
   });
 
   // Toggle Dropdown ZIP
@@ -380,28 +387,95 @@ function bindEvents() {
   const menuZip = document.getElementById('dropdownZipMenu');
   btnZipToggle?.addEventListener('click', (e) => {
     e.stopPropagation();
-    menuZip?.classList.toggle('show');
+    const isExpanded = menuZip?.classList.toggle('show');
+    btnZipToggle.setAttribute('aria-expanded', isExpanded ? 'true' : 'false');
   });
 
   document.addEventListener('click', (e) => {
     if (!e.target.closest('.dropdown-zip')) {
       menuZip?.classList.remove('show');
+      btnZipToggle?.setAttribute('aria-expanded', 'false');
     }
   });
 
   // Batch Download (ZIP)
   document.getElementById('btnDownloadZipPNG')?.addEventListener('click', async () => {
     menuZip?.classList.remove('show');
+    btnZipToggle?.setAttribute('aria-expanded', 'false');
     await handleBatchZip('png');
   });
 
   document.getElementById('btnDownloadZipSVG')?.addEventListener('click', async () => {
     menuZip?.classList.remove('show');
+    btnZipToggle?.setAttribute('aria-expanded', 'false');
     await handleBatchZip('svg');
   });
 
   // 9. Modal Kelola Hari Libur
   bindHolidayModalEvents();
+}
+
+/**
+ * Inisialisasi Switcher Tampilan Khusus Mobile
+ */
+function initMobileViewSwitch() {
+  const btnEditor = document.getElementById('btnViewEditor');
+  const btnPreview = document.getElementById('btnViewPreview');
+  const container = document.getElementById('appMainContainer');
+  if (!btnEditor || !btnPreview || !container) return;
+
+  const updateResponsiveMode = () => {
+    if (window.innerWidth <= 860) {
+      if (!container.classList.contains('show-editor') && !container.classList.contains('show-preview')) {
+        container.classList.remove('show-all');
+        container.classList.add('show-editor');
+        btnEditor.classList.add('active');
+        btnPreview.classList.remove('active');
+      }
+    } else {
+      container.classList.add('show-all');
+      container.classList.remove('show-editor', 'show-preview');
+    }
+  };
+
+  btnEditor.addEventListener('click', () => {
+    btnEditor.classList.add('active');
+    btnPreview.classList.remove('active');
+    container.classList.remove('show-all', 'show-preview');
+    container.classList.add('show-editor');
+  });
+
+  btnPreview.addEventListener('click', () => {
+    btnPreview.classList.add('active');
+    btnEditor.classList.remove('active');
+    container.classList.remove('show-all', 'show-editor');
+    container.classList.add('show-preview');
+  });
+
+  window.addEventListener('resize', updateResponsiveMode);
+  updateResponsiveMode();
+}
+
+/**
+ * Shortcut keyboard global (R-32 Escape key close)
+ */
+function initGlobalShortcuts() {
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      const modal = document.getElementById('holidayManagerModal');
+      if (modal && modal.classList.contains('show')) {
+        modal.classList.remove('show');
+        document.getElementById('btnOpenHolidayModal')?.focus();
+      }
+
+      const menuZip = document.getElementById('dropdownZipMenu');
+      if (menuZip && menuZip.classList.contains('show')) {
+        menuZip.classList.remove('show');
+        document.getElementById('btnDownloadZipToggle')?.setAttribute('aria-expanded', 'false');
+        document.getElementById('btnDownloadZipToggle')?.focus();
+      }
+    }
+  });
 }
 
 /**
@@ -411,6 +485,7 @@ async function handleBatchZip(format) {
   const modalProgress = document.getElementById('zipProgressModal');
   const progressText = document.getElementById('zipProgressText');
   const progressBar = document.getElementById('zipProgressBar');
+  const progressBarAria = document.getElementById('zipProgressBarAria');
 
   if (modalProgress) modalProgress.classList.add('show');
 
@@ -419,11 +494,12 @@ async function handleBatchZip(format) {
       const pct = Math.round((current / total) * 100);
       if (progressText) progressText.textContent = `Merender bulan ${current} dari ${total}... (${pct}%)`;
       if (progressBar) progressBar.style.width = `${pct}%`;
+      if (progressBarAria) progressBarAria.setAttribute('aria-valuenow', String(pct));
     });
     showToast(`12 Bulan Kalender (${format.toUpperCase()}) berhasil diunduh dalam file ZIP!`);
   } catch (err) {
     console.error(err);
-    alert('Gagal mendownload ZIP: ' + err.message);
+    showToast('Gagal memproses ZIP: ' + err.message, 'error');
   } finally {
     if (modalProgress) modalProgress.classList.remove('show');
   }
@@ -436,27 +512,31 @@ function bindHolidayModalEvents() {
   const modal = document.getElementById('holidayManagerModal');
   const btnOpen = document.getElementById('btnOpenHolidayModal');
   const btnClose = document.getElementById('btnCloseHolidayModal');
+  const btnDone = document.getElementById('btnDoneHolidayModal');
   const formAdd = document.getElementById('formAddHoliday');
   const btnReset = document.getElementById('btnResetHolidays');
 
+  const closeModal = () => {
+    modal?.classList.remove('show');
+    btnOpen?.focus();
+  };
+
   btnOpen?.addEventListener('click', () => {
     renderHolidayModalList();
-    // Set default tanggal form ke tahun aktif
     const dateInput = document.getElementById('inputHolidayDate');
     if (dateInput) {
       const monthStr = String(state.month + 1).padStart(2, '0');
       dateInput.value = `${state.year}-${monthStr}-01`;
     }
-    modal.classList.add('show');
+    modal?.classList.add('show');
+    dateInput?.focus();
   });
 
-  btnClose?.addEventListener('click', () => {
-    modal.classList.remove('show');
-  });
+  btnClose?.addEventListener('click', closeModal);
+  btnDone?.addEventListener('click', closeModal);
 
-  // Klik di luar konten modal untuk menutup
   modal?.addEventListener('click', (e) => {
-    if (e.target === modal) modal.classList.remove('show');
+    if (e.target === modal) closeModal();
   });
 
   // Form Tambah Libur
@@ -466,11 +546,11 @@ function bindHolidayModalEvents() {
     const nameInput = document.getElementById('inputHolidayName');
 
     if (!dateInput.value || !nameInput.value.trim()) {
-      alert('Harap lengkapi tanggal dan nama libur.');
+      showToast('Harap lengkapi tanggal dan nama libur.', 'error');
       return;
     }
 
-    addCustomHoliday(dateInput.value, nameInput.value);
+    addCustomHoliday(dateInput.value, nameInput.value.trim());
     nameInput.value = '';
     renderHolidayModalList();
     updateLivePreview();
@@ -479,12 +559,10 @@ function bindHolidayModalEvents() {
 
   // Tombol Reset ke Bawaan
   btnReset?.addEventListener('click', () => {
-    if (confirm(`Kembalikan seluruh daftar libur nasional tahun ${state.year} ke data default?`)) {
-      resetHolidaysForYear(state.year);
-      renderHolidayModalList();
-      updateLivePreview();
-      showToast('Hari libur berhasil di-reset ke bawaan.');
-    }
+    resetHolidaysForYear(state.year);
+    renderHolidayModalList();
+    updateLivePreview();
+    showToast('Daftar libur berhasil dikembalikan ke bawaan.');
   });
 
   // Handler Hapus Item di Modal
@@ -510,7 +588,7 @@ function renderHolidayModalList() {
 
   const holidays = getAllHolidaysForYear(state.year);
   if (holidays.length === 0) {
-    container.innerHTML = `<div class="empty-state">Belum ada hari libur terdaftar untuk tahun ${state.year}.</div>`;
+    container.innerHTML = `<div class="empty-holiday" style="padding: 1rem 0;">Belum ada hari libur terdaftar untuk tahun ${state.year}.</div>`;
     return;
   }
 
@@ -522,7 +600,7 @@ function renderHolidayModalList() {
           <span class="row-name">${escapeHtml(h.name)}</span>
           ${h.isCustom ? '<span class="badge badge-custom">Kustom</span>' : '<span class="badge badge-default">Bawaan</span>'}
         </div>
-        <button type="button" class="btn-delete-holiday" data-id="${h.id}" title="Hapus atau sembunyikan libur ini">
+        <button type="button" class="btn-delete-holiday" data-id="${h.id}" title="Hapus libur ini" aria-label="Hapus libur ${escapeHtml(h.name)}">
           &times;
         </button>
       </div>
@@ -531,9 +609,9 @@ function renderHolidayModalList() {
 }
 
 /**
- * Tampilkan notifikasi Toast
+ * Tampilkan notifikasi Toast (Non-blocking Accessible Feedback)
  */
-function showToast(message) {
+function showToast(message, type = 'info') {
   let toast = document.getElementById('appToast');
   if (!toast) {
     toast = document.createElement('div');
@@ -541,13 +619,14 @@ function showToast(message) {
     toast.className = 'app-toast';
     document.body.appendChild(toast);
   }
+
   toast.textContent = message;
   toast.classList.add('visible');
 
   clearTimeout(window.__toastTimeout);
   window.__toastTimeout = setTimeout(() => {
     toast.classList.remove('visible');
-  }, 3500);
+  }, 3200);
 }
 
 function escapeHtml(str) {
