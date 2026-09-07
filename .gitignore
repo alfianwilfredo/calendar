@@ -1,0 +1,16 @@
+# OS Files
+.DS_Store
+Thumbs.db
+
+# Vercel
+.vercel
+
+# IDE & Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Node / Scratch (jika ada)
+node_modules/
+scratch/
